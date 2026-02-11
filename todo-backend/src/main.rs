@@ -1,5 +1,8 @@
+use std::env;
+
+use dotenvy::dotenv;
 use rocket::{State, http::Status, serde::json::Json};
-use sqlx::PgPool;
+use sqlx::{Pool, Postgres};
 use todo_backend::{ClientData, Todo, db};
 
 use uuid::Uuid;
@@ -13,15 +16,25 @@ fn index() -> &'static str {
 
 #[post("/todo", format = "json", data = "<payload>")]
 async fn create_item(
-    db: &State<PgPool>,
+    db: &State<Pool<Postgres>>,
     payload: Json<ClientData>,
 ) -> Result<Json<ClientData>, Status> {
-    let todo = sqlx::query_as!(
+    let ClientData {
+        id,
+        decription,
+        is_done,
+    } = payload.inner();
+    let new_id = Uuid::new_v4();
+    // let query = format!("", Uuid::new_v4(), payload.description, payload.is_done);
+
+    let todo: Todo = sqlx::query_as!(
         Todo,
-        r#"INSERT INTO todo (id,  description, is_done, date)
+        r#"
+        INSERT INTO todo (id,  description, is_done, date)
         VALUES ($1, $2, $3, NOW())
-        RETURNING id, description, is_done, date"#,
-        Uuid::new_v4(),
+        RETURNING id, description, is_done, date
+    "#,
+        new_id,
         payload.description,
         payload.is_done
     )
@@ -39,8 +52,10 @@ fn todos() -> &'static str {
 
 #[rocket::main]
 async fn main() -> Result<(), rocket::Error> {
-    let dburl = "postgres://postgres:password@localhost/mkhafoba";
-    let pool = db::create_pool(dburl).await;
+    dotenv().ok();
+
+    let dburl = env::var("DATABASE_URL").expect("Database url must be set");
+    let pool = db::create_pool(&dburl).await;
 
     let _rocket = rocket::build()
         .manage(pool)
