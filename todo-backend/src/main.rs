@@ -2,10 +2,9 @@ use std::env;
 
 use dotenvy::dotenv;
 use rocket::{State, http::Status, serde::json::Json};
-use sqlx::{Pool, Postgres};
 use todo_backend::{ClientData, Todo, db};
+use tokio_postgres::Client;
 
-use uuid::Uuid;
 #[macro_use]
 extern crate rocket;
 
@@ -15,34 +14,19 @@ fn index() -> &'static str {
 }
 
 #[post("/todo", format = "json", data = "<payload>")]
-async fn create_item(
-    db: &State<Pool<Postgres>>,
-    payload: Json<ClientData>,
-) -> Result<Json<ClientData>, Status> {
-    let ClientData {
-        id,
-        decription,
-        is_done,
-    } = payload.inner();
-    let new_id = Uuid::new_v4();
-    // let query = format!("", Uuid::new_v4(), payload.description, payload.is_done);
+async fn create_item(db: &State<Client>, payload: Json<ClientData>) -> Result<Json<Todo>, Status> {
+    let row = db.query_one("INSERT INTO todo (description, is_done) VALUES ($1, $2) RETURNING id, description, is_done, date", &[&payload.description, &payload.is_done])
+        .await
+    .expect("What is this");
 
-    let todo: Todo = sqlx::query_as!(
-        Todo,
-        r#"
-        INSERT INTO todo (id,  description, is_done, date)
-        VALUES ($1, $2, $3, NOW())
-        RETURNING id, description, is_done, date
-    "#,
-        new_id,
-        payload.description,
-        payload.is_done
-    )
-    .fetch_one(db.inner())
-    .await
-    .map_err(|_| Status::InternalServerError)?;
+    let todo = Todo {
+        id: row.get(0),
+        description: row.get(1),
+        is_done: row.get(2),
+        date: row.get(3),
+    };
 
-    Ok(Json(ClientData::from(todo)))
+    Ok(Json(todo))
 }
 
 #[get("/todos")]
@@ -55,10 +39,10 @@ async fn main() -> Result<(), rocket::Error> {
     dotenv().ok();
 
     let dburl = env::var("DATABASE_URL").expect("Database url must be set");
-    let pool = db::create_pool(&dburl).await;
+    let client = db::create_client(&dburl).await;
 
     let _rocket = rocket::build()
-        .manage(pool)
+        .manage(client)
         .mount("/", routes![index, todos, create_item])
         .launch()
         .await?;
