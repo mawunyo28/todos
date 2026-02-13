@@ -4,7 +4,7 @@ use tokio_postgres::Client;
 
 pub async fn create_client(database_url: &str) -> Client {
     let connector = TlsConnector::builder()
-        .danger_accept_invalid_certs(true) // ← Add this line
+        .danger_accept_invalid_certs(true)
         .build()
         .expect("Failed to build TLS connector");
     let connector = MakeTlsConnector::new(connector);
@@ -21,4 +21,3 @@ pub async fn create_client(database_url: &str) -> Client {
 
     client
 }
-
